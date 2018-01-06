@@ -4,6 +4,11 @@
 #define PPMD8_FREEZE_SUPPORT
 //#define PPMD7_RANGE7Z // should not be used
 
+// experimental purpose; 20 should be used.
+// changing FACTOR will make incompatible archive.
+// 10U==KB, 20U==MB
+#define FACTOR 20U
+
 #include "../compat.h"
 #include "../lib/popt/popt.h"
 #include "../lib/lzma/C/Ppmd7.h"
@@ -187,7 +192,7 @@ int unppmd(const int argc, const char **argv){
 				return 1;
 			}
 			if(variant=='I'){
-				Ppmd8_Alloc(&ppmd8,sasize<<20,&g_Alloc);
+				Ppmd8_Alloc(&ppmd8,((unsigned int)sasize)<<FACTOR,&g_Alloc);
 				Ppmd8_RangeDec_Init(&ppmd8);
 				if(order<2){
 					Ppmd8_InitSolid(&ppmd8);
@@ -214,7 +219,7 @@ int unppmd(const int argc, const char **argv){
 				R8_RangeDec_CreateVTable(&r8);
 				Ppmd8_RangeDec_Init(&r8.ppmd8);
 #endif
-				Ppmd7_Alloc(&ppmd7,sasize<<20,&g_Alloc);
+				Ppmd7_Alloc(&ppmd7,((unsigned int)sasize)<<FACTOR,&g_Alloc);
 				if(order<2){
 					Ppmd7_InitSolid(&ppmd7);
 				}else{
@@ -268,7 +273,7 @@ int unppmd(const int argc, const char **argv){
 			fwrite(*_argv+(*_argv[0]=='/'),1,len-(*_argv[0]=='/'),fout);
 
 			if(variant==8){
-				Ppmd8_Alloc(&ppmd8,sasize<<20,&g_Alloc);
+				Ppmd8_Alloc(&ppmd8,((unsigned int)sasize)<<FACTOR,&g_Alloc);
 				Ppmd8_RangeEnc_Init(&ppmd8);
 				if(order<2){
 					Ppmd8_InitSolid(&ppmd8);
@@ -281,7 +286,7 @@ int unppmd(const int argc, const char **argv){
 				Ppmd8_RangeEnc_FlushData(&ppmd8);
 			}else if(variant==7){
 				int c;
-				Ppmd7_Alloc(&ppmd7,sasize<<20,&g_Alloc);
+				Ppmd7_Alloc(&ppmd7,((unsigned int)sasize)<<FACTOR,&g_Alloc);
 				if(order<2){
 					Ppmd7_InitSolid(&ppmd7);
 				}else{
