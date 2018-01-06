@@ -57,7 +57,7 @@ void R8_Ppmd7_EncodeSymbol(CPpmd7 *p, CPpmd8 *rc, int symbol);
 #define CTX7(ref) ((CPpmd7_Context *)Ppmd7_GetContext(p, ref))
 #define STATS7(ctx) Ppmd7_GetStats(p, ctx)
 #define SUFFIX7(ctx) CTX7((ctx)->Suffix)
-void Ppmd7_InitSolid(CPpmd7 *p){
+static void Ppmd7_InitSolid(CPpmd7 *p){
 	p->OrderFall = p->MaxOrder;
 	p->MinContext = p->MaxContext;
 	CPpmd7_Context *ctx = p->MinContext;
@@ -68,7 +68,7 @@ void Ppmd7_InitSolid(CPpmd7 *p){
 #define CTX8(ref) ((CPpmd8_Context *)Ppmd8_GetContext(p, ref))
 #define STATS8(ctx) Ppmd8_GetStats(p, ctx)
 #define SUFFIX8(ctx) CTX8((ctx)->Suffix)
-void Ppmd8_InitSolid(CPpmd8 *p){
+static void Ppmd8_InitSolid(CPpmd8 *p){
 	p->OrderFall = p->MaxOrder;
 	p->MinContext = p->MaxContext;
 	CPpmd8_Context *ctx = p->MinContext;
