@@ -46,14 +46,6 @@ static void *SzAlloc(ISzAllocPtr p, size_t size) { return malloc(size); }
 static void SzFree(ISzAllocPtr p, void *address) { free(address); }
 static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 
-/// Ppmd7 helper with Ppmd8 rangecoder ///
-typedef struct{
-	IPpmd7_RangeDec vt;
-	CPpmd8 ppmd8;
-} TRangeDecoderPpmd8;
-void R8_RangeDec_CreateVTable(TRangeDecoderPpmd8 *p);
-void R8_Ppmd7_EncodeSymbol(CPpmd7 *p, CPpmd8 *rc, int symbol);
-
 #define CTX7(ref) ((CPpmd7_Context *)Ppmd7_GetContext(p, ref))
 #define STATS7(ctx) Ppmd7_GetStats(p, ctx)
 #define SUFFIX7(ctx) CTX7((ctx)->Suffix)
@@ -193,7 +185,7 @@ int unppmd(const int argc, const char **argv){
 			}
 			if(variant=='I'){
 				Ppmd8_Alloc(&ppmd8,((unsigned int)sasize)<<FACTOR,&g_Alloc);
-				Ppmd8_RangeDec_Init(&ppmd8);
+				Ppmd8_Init_RangeDec(&ppmd8);
 				if(order<2){
 					Ppmd8_InitSolid(&ppmd8);
 				}else{
@@ -210,14 +202,12 @@ int unppmd(const int argc, const char **argv){
 					fputc(c,fout);
 				}
 			}else if(variant=='H'){
+				CPpmd7_RangeDec *rc = &ppmd7.rc.dec;
+				rc->Stream=&Sreader.p;
 #ifdef PPMD7_RANGE7Z
-				CPpmd7z_RangeDec r8;r8.Stream=&Sreader.p;
-				Ppmd7z_RangeDec_CreateVTable(&r8);
-				Ppmd7z_RangeDec_Init(&r8);
+				Ppmd7z_RangeDec_Init(rc);
 #else
-				TRangeDecoderPpmd8 r8;r8.ppmd8.Stream.In=&Sreader.p;
-				R8_RangeDec_CreateVTable(&r8);
-				Ppmd8_RangeDec_Init(&r8.ppmd8);
+				Ppmd7a_RangeDec_Init(rc);
 #endif
 				Ppmd7_Alloc(&ppmd7,((unsigned int)sasize)<<FACTOR,&g_Alloc);
 				if(order<2){
@@ -226,7 +216,11 @@ int unppmd(const int argc, const char **argv){
 					Ppmd7_Init(&ppmd7,order);
 				}
 				for(;;){
-					int c=Ppmd7_DecodeSymbol(&ppmd7,&r8.vt);
+#ifdef PPMD7_RANGE7Z
+					int c=Ppmd7z_DecodeSymbol(&ppmd7);
+#else
+					int c=Ppmd7a_DecodeSymbol(&ppmd7);
+#endif
 					if(c<0){
 						if(c==-1)break;
 						fprintf(stderr,"corrupted. cannot continue.\n");
@@ -274,7 +268,7 @@ int unppmd(const int argc, const char **argv){
 
 			if(variant==8){
 				Ppmd8_Alloc(&ppmd8,((unsigned int)sasize)<<FACTOR,&g_Alloc);
-				Ppmd8_RangeEnc_Init(&ppmd8);
+				Ppmd8_Init_RangeEnc(&ppmd8);
 				if(order<2){
 					Ppmd8_InitSolid(&ppmd8);
 				}else{
@@ -283,7 +277,7 @@ int unppmd(const int argc, const char **argv){
 				int c;
 				for(;~(c=fgetc(fin));)Ppmd8_EncodeSymbol(&ppmd8,c);
 				Ppmd8_EncodeSymbol(&ppmd8,-1);
-				Ppmd8_RangeEnc_FlushData(&ppmd8);
+				Ppmd8_Flush_RangeEnc(&ppmd8);
 			}else if(variant==7){
 				int c;
 				Ppmd7_Alloc(&ppmd7,((unsigned int)sasize)<<FACTOR,&g_Alloc);
@@ -292,18 +286,18 @@ int unppmd(const int argc, const char **argv){
 				}else{
 					Ppmd7_Init(&ppmd7,order);
 				}
+				CPpmd7z_RangeEnc *rc = &ppmd7.rc.enc;
+				rc->Stream=&Swriter.p;
 #ifdef PPMD7_RANGE7Z
-				CPpmd7z_RangeEnc r8;r8.Stream=&Swriter.p;
-				Ppmd7z_RangeEnc_Init(&r8);
-				for(;~(c=fgetc(fin));)Ppmd7_EncodeSymbol(&ppmd7,&r8,c);
-				Ppmd7_EncodeSymbol(&ppmd7,&r8,-1);
-				Ppmd7z_RangeEnc_FlushData(&r8);
+				Ppmd7z_Init_RangeEnc(&ppmd7);
+				for(;~(c=fgetc(fin));)Ppmd7z_EncodeSymbol(&ppmd7,c);
+				Ppmd7z_EncodeSymbol(&ppmd7,-1);
+				Ppmd7z_Flush_RangeEnc(&ppmd7);
 #else
-				CPpmd8 r8;r8.Stream.Out=&Swriter.p;
-				Ppmd8_RangeEnc_Init(&r8);
-				for(;~(c=fgetc(fin));)R8_Ppmd7_EncodeSymbol(&ppmd7,&r8,c);
-				R8_Ppmd7_EncodeSymbol(&ppmd7,&r8,-1);
-				Ppmd8_RangeEnc_FlushData(&r8);
+				Ppmd7a_Init_RangeEnc(rc);
+				for(;~(c=fgetc(fin));)Ppmd7a_EncodeSymbol(&ppmd7,c);
+				Ppmd7a_EncodeSymbol(&ppmd7,-1);
+				Ppmd7a_Flush_RangeEnc(&ppmd7);
 #endif
 			}
 			fclose(fin);

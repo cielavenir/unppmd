@@ -3,77 +3,46 @@
 This code is based on:
   PPMd var.H (2001): Dmitry Shkarin : Public domain */
 
+/* Ported to Ppmd7a by @cielavenir */
 
 #include "Precomp.h"
 
 #include "Ppmd7.h"
 
-#define kTopValue (1 << 24)
+#define kTop (1 << 24)
+#define kBot (1 << 15)
 
 #define R (&p->rc.enc)
 
-void Ppmd7z_Init_RangeEnc(CPpmd7 *p)
+#define WRITE_BYTE(p) IByteOut_Write(p->Stream, (Byte)(p->Low >> 24))
+
+void Ppmd7a_Flush_RangeEnc(CPpmd7 *p)
 {
-  R->Low = 0;
-  R->Range = 0xFFFFFFFF;
-  R->Cache = 0;
-  R->CacheSize = 1;
+  unsigned i;
+  for (i = 0; i < 4; i++, R->Low <<= 8 )
+    WRITE_BYTE(R);
 }
 
-MY_NO_INLINE
-static void RangeEnc_ShiftLow(CPpmd7 *p)
-{
-  if ((UInt32)R->Low < (UInt32)0xFF000000 || (unsigned)(R->Low >> 32) != 0)
-  {
-    Byte temp = R->Cache;
-    do
-    {
-      IByteOut_Write(R->Stream, (Byte)(temp + (Byte)(R->Low >> 32)));
-      temp = 0xFF;
-    }
-    while (--R->CacheSize != 0);
-    R->Cache = (Byte)((UInt32)R->Low >> 24);
-  }
-  R->CacheSize++;
-  R->Low = (UInt32)((UInt32)R->Low << 8);
-}
-
-#define RC_NORM_BASE(p) if (R->Range < kTopValue) { R->Range <<= 8; RangeEnc_ShiftLow(p);
-#define RC_NORM_1(p) RC_NORM_BASE(p) }
-#define RC_NORM(p) RC_NORM_BASE(p) RC_NORM_BASE(p) }}
+#define RC_NORM(p) \
+while ((R->Low ^ (R->Low + R->Range)) < kTop \
+  || (R->Range < kBot && ((R->Range = (0 - R->Low) & (kBot - 1)), 1))) \
+  { WRITE_BYTE(R); R->Range <<= 8; R->Low <<= 8; }
 
 // we must use only one type of Normalization from two: LOCAL or REMOTE
 #define RC_NORM_LOCAL(p)    // RC_NORM(p)
 #define RC_NORM_REMOTE(p)   RC_NORM(p)
 
-/*
-#define RangeEnc_Encode(p, start, _size_) \
-  { UInt32 size = _size_; \
-    R->Low += start * R->Range; \
-    R->Range *= size; \
-    RC_NORM_LOCAL(p); }
-*/
-
 MY_FORCE_INLINE
 // MY_NO_INLINE
-static void RangeEnc_Encode(CPpmd7 *p, UInt32 start, UInt32 size)
+static void RangeEnc_Encode(CPpmd7 *p, UInt32 start, UInt32 size, UInt32 total)
 {
-  R->Low += start * R->Range;
+  R->Low += start * (R->Range /= total);
   R->Range *= size;
-  RC_NORM_LOCAL(p);
+  RC_NORM_LOCAL(R);
 }
 
-void Ppmd7z_Flush_RangeEnc(CPpmd7 *p)
-{
-  unsigned i;
-  for (i = 0; i < 5; i++)
-    RangeEnc_ShiftLow(p);
-}
-
-
-
-#define RC_Encode(start, size) RangeEnc_Encode(p, start, size);
-#define RC_EncodeFinal(start, size) RC_Encode(start, size); RC_NORM_REMOTE(p);
+#define RC_Encode(start, size, total) RangeEnc_Encode(p, start, size, total);
+#define RC_EncodeFinal(start, size, total) RC_Encode(start, size, total); RC_NORM_REMOTE(p);
 
 #define CTX(ref) ((CPpmd7_Context *)Ppmd7_GetContext(p, ref))
 #define SUFFIX(ctx) CTX((ctx)->Suffix)
@@ -86,7 +55,7 @@ void Ppmd7_UpdateModel(CPpmd7 *p);
 
 //MY_FORCE_INLINE
 //static
-void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
+void Ppmd7a_EncodeSymbol(CPpmd7 *p, int symbol)
 {
   size_t charMask[256 / sizeof(size_t)];
   
@@ -99,12 +68,12 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
 
     
     
-    R->Range /= p->MinContext->Union2.SummFreq;
+    //R->Range /= p->MinContext->Union2.SummFreq;
     
     if (s->Symbol == symbol)
     {
       // R->Range /= p->MinContext->Union2.SummFreq;
-      RC_EncodeFinal(0, s->Freq);
+      RC_EncodeFinal(0, s->Freq, p->MinContext->Union2.SummFreq);
       p->FoundState = s;
       Ppmd7_Update1_0(p);
       return;
@@ -117,7 +86,7 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
       if ((++s)->Symbol == symbol)
       {
         // R->Range /= p->MinContext->Union2.SummFreq;
-        RC_EncodeFinal(sum, s->Freq);
+        RC_EncodeFinal(sum, s->Freq, p->MinContext->Union2.SummFreq);
         p->FoundState = s;
         Ppmd7_Update1(p);
         return;
@@ -127,7 +96,7 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
     while (--i);
 
     // R->Range /= p->MinContext->Union2.SummFreq;
-    RC_Encode(sum, p->MinContext->Union2.SummFreq - sum);
+    RC_Encode(sum, p->MinContext->Union2.SummFreq - sum, p->MinContext->Union2.SummFreq);
     
     p->HiBitsFlag = PPMD7_HiBitsFlag_3(p->FoundState->Symbol);
     PPMD_SetAllBitsIn256Bytes(charMask);
@@ -160,7 +129,7 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
       *prob = (UInt16)(pr + (1 << PPMD_INT_BITS));
       // RangeEnc_EncodeBit_0(p, bound);
       R->Range = bound;
-      RC_NORM_1(p);
+      RC_NORM(p);
       
       // p->FoundState = s;
       // Ppmd7_UpdateBin(p);
@@ -184,7 +153,7 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
     p->InitEsc = p->ExpEscape[pr >> 10];
     // RangeEnc_EncodeBit_1(p, bound);
     R->Low += bound;
-    R->Range -= bound;
+    R->Range = (R->Range & ~((UInt32)PPMD_BIN_SCALE - 1)) - bound;
     RC_NORM_LOCAL(p)
     
     PPMD_SetAllBitsIn256Bytes(charMask);
@@ -278,8 +247,8 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
         }
 
         
-        R->Range /= sum;
-        RC_EncodeFinal(low, freq);
+        //R->Range /= sum;
+        RC_EncodeFinal(low, freq, sum);
         Ppmd7_Update2(p);
         return;
       }
@@ -292,8 +261,8 @@ void Ppmd7z_EncodeSymbol(CPpmd7 *p, int symbol)
       UInt32 total = sum + escFreq;
       see->Summ = (UInt16)(see->Summ + total);
 
-      R->Range /= total;
-      RC_Encode(sum, escFreq);
+      //R->Range /= total;
+      RC_Encode(sum, escFreq, total);
     }
 
     {
