@@ -11,6 +11,7 @@
 
 #include "../compat.h"
 #include "../lib/popt/popt.h"
+#include "../lib/lzma/C/Alloc.h"
 #include "../lib/lzma/C/Ppmd7.h"
 #include "../lib/lzma/C/Ppmd8.h"
 #include <string.h>
@@ -41,10 +42,6 @@ int makedir(const char *_dir){
 #else
 #include "../lib/xutil.h"
 #endif
-
-static void *SzAlloc(ISzAllocPtr p, size_t size) { return malloc(size); }
-static void SzFree(ISzAllocPtr p, void *address) { free(address); }
-static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 
 #define CTX7(ref) ((CPpmd7_Context *)Ppmd7_GetContext(p, ref))
 #define STATS7(ctx) Ppmd7_GetStats(p, ctx)
@@ -117,12 +114,12 @@ int unppmd(const int argc, const char **argv){
 		{ "order",     'o',         POPT_ARG_INT, &order,    'o',       "2-16 (6)", "order" },
 		{ "solid",     's',         POPT_ARG_INT, &solid,    's',       "0-1 (0)", "solid" },
 		{ "cutoff",     'r',         POPT_ARG_INT, &cutoff,    'r',       "0-2 (0)", "cutoff" },
-		{ "variant",     'v',         POPT_ARG_INT, &variant,    'r',       "7-8 (8)", "variant" },
+		{ "variant",     'v',         POPT_ARG_INT, &variant,    'r',       "7-9 (8)", "variant" },
 		POPT_AUTOHELP,
 		POPT_TABLEEND,
 	};
 	optCon = poptGetContext(argv[0], argc, argv, optionsTable, 0);
-	poptSetOtherOptionHelp(optCon, "{-e files... >arc.pmd} or {d <arc.pmd}");
+	poptSetOtherOptionHelp(optCon, "{-e files... >arc.pmd} or {-d <arc.pmd}");
 
 	for(;(optc=poptGetNextOpt(optCon))>=0;){}
 
@@ -135,10 +132,37 @@ int unppmd(const int argc, const char **argv){
 	if(cutoff<0)cutoff=0;
 	if(cutoff>2)cutoff=2;
 
-	if(cmode+mode!=1 || variant<7 || 8<variant){
+	if(cmode+mode!=1 || variant<7 || 9<variant){
 		poptPrintHelp(optCon, stderr, 0);
 		poptFreeContext(optCon);
 		return 1;
+	}
+
+	if(variant==9){
+		char cmdmemory[9];snprintf(cmdmemory,9,"-m%d",sasize);
+		char cmdorder[9]; snprintf(cmdorder,9,"-o%d",order);
+		char cmdsolid[9]; snprintf(cmdsolid,9,"-s%d",solid);
+		char cmdcutoff[9];snprintf(cmdcutoff,9,"-r%d",cutoff);
+		const char **_argv=poptGetArgs(optCon);
+		int arglen=0;
+		if(_argv){
+			// _argv is NULL when no args; can happen when decompressing
+			for(;_argv[arglen];++arglen);
+		}
+		const char **cmds=(const char**)malloc(sizeof(char*)*(7+arglen));
+		cmds[0]="ppmdj1";
+		cmds[1]=mode?"d":"e";
+		cmds[2]=cmdmemory;
+		cmds[3]=cmdorder;
+		cmds[4]=cmdsolid;
+		cmds[5]=cmdcutoff;
+		cmds[6]="--";
+		for(int i=0;i<arglen;i++)cmds[7+i]=_argv[i];
+		int ppmdj1(const int argc, const char **argv);
+		int ret=ppmdj1(7+arglen,cmds);
+		free(cmds);
+		poptFreeContext(optCon);
+		return ret;
 	}
 
 	if(mode){
@@ -171,6 +195,10 @@ int unppmd(const int argc, const char **argv){
 			fprintf(stderr,"Decompressing %s: ",fname);
 			if(ai.signature != PPMdSignature){
 				fprintf(stderr,"not in PPMd format. cannot continue.\n");
+				return 1;
+			}
+			if(variant=='J'){
+				fprintf(stderr,"saved in variant %c. need to explicitly specify -v9 in command line.\n",variant);
 				return 1;
 			}
 			if(variant!='H' && variant!='I'){
@@ -258,6 +286,16 @@ int unppmd(const int argc, const char **argv){
 			if(!fin){
 				fprintf(stderr,"not found.\n");
 				continue;
+			}
+			{
+				struct stat s;
+				memset(&s,0,sizeof(struct stat));
+				fstat(fileno(fin),&s);
+				if(!S_ISREG(s.st_mode)){
+					fclose(fin);
+					fprintf(stderr,"not normal file.\n");
+					continue;
+				}
 			}
 			ai.signature=PPMdSignature;
 			int len=strlen(*_argv);
