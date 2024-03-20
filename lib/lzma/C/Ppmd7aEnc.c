@@ -9,8 +9,8 @@ This code is based on:
 
 #include "Ppmd7.h"
 
-#define kTop (1 << 24)
-#define kBot (1 << 15)
+#define kTop ((UInt32)1 << 24)
+#define kBot ((UInt32)1 << 15)
 
 #define R (&p->rc.enc)
 
@@ -32,8 +32,8 @@ while ((R->Low ^ (R->Low + R->Range)) < kTop \
 #define RC_NORM_LOCAL(p)    // RC_NORM(p)
 #define RC_NORM_REMOTE(p)   RC_NORM(p)
 
-MY_FORCE_INLINE
-// MY_NO_INLINE
+Z7_FORCE_INLINE
+// Z7_NO_INLINE
 static void RangeEnc_Encode(CPpmd7 *p, UInt32 start, UInt32 size, UInt32 total)
 {
   R->Low += start * (R->Range /= total);
@@ -53,7 +53,7 @@ void Ppmd7_UpdateModel(CPpmd7 *p);
 
 #define MASK(sym) ((unsigned char *)charMask)[sym]
 
-//MY_FORCE_INLINE
+//Z7_FORCE_INLINE
 //static
 void Ppmd7a_EncodeSymbol(CPpmd7 *p, int symbol)
 {
@@ -224,7 +224,7 @@ void Ppmd7a_EncodeSymbol(CPpmd7 *p, int symbol)
         UInt32 freq = s->Freq;
         unsigned num2;
 
-        Ppmd_See_Update(see);
+        Ppmd_See_UPDATE(see);
         p->FoundState = s;
         sum += escFreq;
 
@@ -281,13 +281,3 @@ void Ppmd7a_EncodeSymbol(CPpmd7 *p, int symbol)
     }
   }
 }
-
-#if 0
-void Ppmd7z_EncodeSymbols(CPpmd7 *p, const Byte *buf, const Byte *lim)
-{
-  for (; buf < lim; buf++)
-  {
-    Ppmd7z_EncodeSymbol(p, *buf);
-  }
-}
-#endif
